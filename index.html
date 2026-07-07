@@ -1006,11 +1006,12 @@ class WatermelonGame {
   constructor() {
     // 动态适配画布尺寸（手机端全屏）
     const topBar = document.getElementById('top-bar');
+    const canvasContainer = document.getElementById('canvas-container');
     const isMobile = window.innerWidth <= 480;
     if (isMobile) {
       CANVAS_WIDTH = window.innerWidth;
-      const topBarHeight = topBar ? topBar.offsetHeight : 0;
-      CANVAS_HEIGHT = window.innerHeight - topBarHeight;
+      // 使用容器实际高度，避免底部 hint-text 占位导致墙体被裁剪
+      CANVAS_HEIGHT = canvasContainer ? canvasContainer.clientHeight : (window.innerHeight - (topBar ? topBar.offsetHeight : 0));
       DANGER_LINE_Y = CANVAS_HEIGHT * 0.18;
     }
 
