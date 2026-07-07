@@ -302,9 +302,9 @@
   @media (max-width: 480px) {
     #game-wrapper {
       width: 100vw;
-      height: 100dvh;
+      height: var(--vv-height, 100dvh);
       max-width: 100vw;
-      max-height: 100dvh;
+      max-height: var(--vv-height, 100dvh);
       border-radius: 0;
       box-shadow: none;
     }
@@ -394,6 +394,7 @@ const GRAVITY_Y = 1;
 const FRICTION = 0.04;
 const RESTITUTION = 0.05;
 const WALL_THICKNESS = 60;
+const BOTTOM_PADDING = 25; // 底部安全距离，防止大水果被容器边缘截断
 
 // 水果等级配置：[等级, 名称, 半径, 颜色, 次色(用于纹理/渐变)]
 const FRUITS = [
@@ -996,8 +997,8 @@ class WatermelonGame {
     const isMobile = window.innerWidth <= 480;
     if (isMobile) {
       CANVAS_WIDTH = window.innerWidth;
-      // 使用容器实际高度，确保画布逻辑高度与可见区域精确匹配
-      CANVAS_HEIGHT = canvasContainer ? canvasContainer.clientHeight : (window.innerHeight - (topBar ? topBar.offsetHeight : 0));
+      // 使用容器实际高度减去底部安全距离，确保大水果不会被截断
+      CANVAS_HEIGHT = (canvasContainer ? canvasContainer.clientHeight : (window.innerHeight - (topBar ? topBar.offsetHeight : 0))) - BOTTOM_PADDING;
       DANGER_LINE_Y = CANVAS_HEIGHT * 0.18;
     }
 
@@ -1503,6 +1504,21 @@ class WatermelonGame {
  * ================================================================ */
 
 // 等待 Matter.js 加载完成
+/**
+ * 动态更新视口高度（兼容微信内置浏览器底部工具栏侵占可视区域）
+ * 通过 CSS 变量 --vv-height 控制 #game-wrapper 的实际高度
+ */
+function updateViewportHeight() {
+  var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty('--vv-height', h + 'px');
+}
+
+// 监听视口变化（微信工具栏显示/隐藏、横竖屏切换等）
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', updateViewportHeight);
+}
+window.addEventListener('resize', updateViewportHeight);
+
 function startGame() {
   if (typeof Matter === 'undefined') {
     // Matter.js 尚未加载，稍后重试
@@ -1514,6 +1530,8 @@ function startGame() {
     setTimeout(startGame, 50);
     return;
   }
+  // 确保视口高度已更新（容器高度依赖 --vv-height CSS 变量）
+  updateViewportHeight();
   window.game = new WatermelonGame();
 }
 
