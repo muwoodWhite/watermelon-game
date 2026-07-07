@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>合成大西瓜</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -308,6 +308,22 @@
     font-family: 'Baloo 2', sans-serif;
     opacity: 0.7;
   }
+
+  /* ===== 手机端全屏适配 ===== */
+  @media (max-width: 480px) {
+    #game-wrapper {
+      width: 100vw;
+      height: 100dvh;
+      max-width: 100vw;
+      max-height: 100dvh;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    #top-bar {
+      padding-top: max(14px, env(safe-area-inset-top));
+      padding-bottom: 8px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -377,20 +393,20 @@ const { Engine, World, Bodies, Events, Composite } = Matter;
  * 一、配置常量
  * ================================================================ */
 
-// 画布逻辑尺寸（与 CSS 容器匹配）
-const CANVAS_WIDTH = 420;
-const CANVAS_HEIGHT = 560; // 画布区高度（顶部信息栏占其余空间）
+// 画布逻辑尺寸（与 CSS 容器匹配，手机端动态适配）
+let CANVAS_WIDTH = 420;
+let CANVAS_HEIGHT = 560; // 画布区高度（顶部信息栏占其余空间）
 
 // 警戒线距画布顶部距离
-const DANGER_LINE_Y = 120;
+let DANGER_LINE_Y = 120;
 
 // 掉落冷却时间（毫秒）
 const DROP_COOLDOWN = 500;
 
 // 物理参数
 const GRAVITY_Y = 1;
-const FRICTION = 0.005;
-const RESTITUTION = 0.2;
+const FRICTION = 0.04;
+const RESTITUTION = 0.05;
 const WALL_THICKNESS = 60;
 
 // 水果等级配置：[等级, 名称, 半径, 颜色, 次色(用于纹理/渐变)]
@@ -988,11 +1004,25 @@ class MergeAnimation {
 
 class WatermelonGame {
   constructor() {
-    // Canvas
+    // 动态适配画布尺寸（手机端全屏）
+    const topBar = document.getElementById('top-bar');
+    const isMobile = window.innerWidth <= 480;
+    if (isMobile) {
+      CANVAS_WIDTH = window.innerWidth;
+      const topBarHeight = topBar ? topBar.offsetHeight : 0;
+      CANVAS_HEIGHT = window.innerHeight - topBarHeight;
+      DANGER_LINE_Y = CANVAS_HEIGHT * 0.18;
+    }
+
+    // Canvas（高 DPI 清晰渲染）
     this.canvas = document.getElementById('game-canvas');
     this.ctx = this.canvas.getContext('2d');
-    this.canvas.width = CANVAS_WIDTH;
-    this.canvas.height = CANVAS_HEIGHT;
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = CANVAS_WIDTH * dpr;
+    this.canvas.height = CANVAS_HEIGHT * dpr;
+    this.canvas.style.width = CANVAS_WIDTH + 'px';
+    this.canvas.style.height = CANVAS_HEIGHT + 'px';
+    this.ctx.scale(dpr, dpr);
 
     // 预览 Canvas
     this.nextCanvas = document.getElementById('next-canvas');
@@ -1009,7 +1039,7 @@ class WatermelonGame {
     this.currentLevel = randomSpawnLevel();
     this.nextLevel = randomSpawnLevel();
     this.dropX = CANVAS_WIDTH / 2;
-    this.dropY = 50;
+    this.dropY = CANVAS_HEIGHT * 0.08;
 
     // 物理引擎
     this.engine = null;
@@ -1054,6 +1084,10 @@ class WatermelonGame {
     this.engine = Engine.create();
     this.world = this.engine.world;
     this.engine.gravity.y = GRAVITY_Y;
+    // 启用休眠机制 + 提高求解精度，消除堆叠抖动
+    this.engine.enableSleeping = true;
+    this.engine.positionIterations = 8;
+    this.engine.velocityIterations = 8;
   }
 
   /** 创建边界墙体 */
@@ -1166,9 +1200,10 @@ class WatermelonGame {
     const body = Bodies.circle(x, y, fruit.radius, {
       restitution: RESTITUTION,
       friction: FRICTION,
-      frictionStatic: 0.1,
+      frictionStatic: 0.6,
       density: 0.001 + level * 0.0002,
       label: 'fruit',
+      sleepThreshold: 60,
     });
     body.fruitLevel = level;
     body.fruitRadius = fruit.radius;
@@ -1183,7 +1218,7 @@ class WatermelonGame {
     this.canvas.addEventListener('mousemove', (e) => {
       if (this.gameOver) return;
       const rect = this.canvas.getBoundingClientRect();
-      const scaleX = this.canvas.width / rect.width;
+      const scaleX = CANVAS_WIDTH / rect.width;
       this.dropX = clamp((e.clientX - rect.left) * scaleX, this.getCurrentRadius(), CANVAS_WIDTH - this.getCurrentRadius());
     });
 
@@ -1191,7 +1226,7 @@ class WatermelonGame {
     this.canvas.addEventListener('click', (e) => {
       if (this.gameOver) return;
       const rect = this.canvas.getBoundingClientRect();
-      const scaleX = this.canvas.width / rect.width;
+      const scaleX = CANVAS_WIDTH / rect.width;
       this.dropX = clamp((e.clientX - rect.left) * scaleX, this.getCurrentRadius(), CANVAS_WIDTH - this.getCurrentRadius());
       this.dropFruit();
     });
@@ -1202,7 +1237,7 @@ class WatermelonGame {
       if (this.gameOver) return;
       const touch = e.touches[0];
       const rect = this.canvas.getBoundingClientRect();
-      const scaleX = this.canvas.width / rect.width;
+      const scaleX = CANVAS_WIDTH / rect.width;
       this.dropX = clamp((touch.clientX - rect.left) * scaleX, this.getCurrentRadius(), CANVAS_WIDTH - this.getCurrentRadius());
     }, { passive: false });
 
@@ -1211,7 +1246,7 @@ class WatermelonGame {
       if (this.gameOver) return;
       const touch = e.touches[0];
       const rect = this.canvas.getBoundingClientRect();
-      const scaleX = this.canvas.width / rect.width;
+      const scaleX = CANVAS_WIDTH / rect.width;
       this.dropX = clamp((touch.clientX - rect.left) * scaleX, this.getCurrentRadius(), CANVAS_WIDTH - this.getCurrentRadius());
     }, { passive: false });
 
