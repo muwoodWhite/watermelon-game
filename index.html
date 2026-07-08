@@ -298,6 +298,73 @@
     display: inline-block;
   }
 
+  /* ===== 退出确认弹窗 ===== */
+  #exit-confirm-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    animation: fadeIn 0.3s ease;
+  }
+  #exit-confirm-overlay.show {
+    display: flex;
+  }
+  .exit-confirm-card {
+    background: linear-gradient(145deg, #1E1E2E 0%, #16162A 100%);
+    border-radius: 24px;
+    padding: 32px 40px 28px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    border: 1px solid var(--card-border);
+    max-width: 300px;
+  }
+  .exit-confirm-title {
+    font-size: 26px;
+    color: var(--text-dark);
+    margin-bottom: 8px;
+  }
+  .exit-confirm-subtitle {
+    font-size: 14px;
+    color: var(--text-light);
+    margin-bottom: 24px;
+    font-family: 'Baloo 2', sans-serif;
+  }
+  .exit-btn-group {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+  #exit-continue-btn {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: white;
+    border: none;
+    border-radius: 50px;
+    padding: 12px 28px;
+    font-size: 17px;
+    font-family: 'ZCOOL KuaiLe', sans-serif;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(232,62,140,0.4);
+    letter-spacing: 1px;
+  }
+  #exit-quit-btn {
+    background: rgba(255,255,255,0.08);
+    color: var(--text-light);
+    border: 1px solid var(--card-border);
+    border-radius: 50px;
+    padding: 12px 28px;
+    font-size: 17px;
+    font-family: 'ZCOOL KuaiLe', sans-serif;
+    cursor: pointer;
+    letter-spacing: 1px;
+  }
+
   /* ===== 手机端全屏适配 ===== */
   @media (max-width: 480px) {
     #game-wrapper {
@@ -358,6 +425,18 @@
         </div>
       </div>
       <button id="restart-btn">重新开始</button>
+    </div>
+  </div>
+
+  <!-- 退出确认弹窗 -->
+  <div id="exit-confirm-overlay">
+    <div class="exit-confirm-card">
+      <div class="exit-confirm-title">确定要退出吗？</div>
+      <div class="exit-confirm-subtitle">当前游戏进度将丢失</div>
+      <div class="exit-btn-group">
+        <button id="exit-quit-btn">退出</button>
+        <button id="exit-continue-btn">继续游戏</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1180,6 +1259,19 @@ class WatermelonGame {
     }
     this.score += gained;
     this.updateScoreDisplay();
+
+    // 唤醒合并点周围的休眠水果，防止支撑消失后悬空
+    const nearbyBodies = Composite.allBodies(this.world);
+    for (const body of nearbyBodies) {
+      if (body.fruitLevel && body.isSleeping) {
+        const dx = body.position.x - mergeX;
+        const dy = body.position.y - mergeY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 250) {
+          Matter.Sleeping.set(body, false);
+        }
+      }
+    }
   }
 
   /** 创建水果物理体 */
@@ -1483,6 +1575,21 @@ class WatermelonGame {
       this.processPendingMerges();
     }
 
+    // 每120帧检查一次悬空水果（非合并场景的兜底）
+    this._frameCount = (this._frameCount || 0) + 1;
+    if (this._frameCount % 120 === 0) {
+      const allBodies = Composite.allBodies(this.world);
+      for (const body of allBodies) {
+        if (body.fruitLevel && body.isSleeping) {
+          const distToBottom = CANVAS_HEIGHT - body.position.y;
+          const fruitR = getFruitConfig(body.fruitLevel).radius;
+          if (distToBottom > fruitR * 3) {
+            Matter.Sleeping.set(body, false);
+          }
+        }
+      }
+    }
+
     // 渲染
     const ctx = this.ctx;
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -1533,6 +1640,41 @@ function startGame() {
   // 确保视口高度已更新（容器高度依赖 --vv-height CSS 变量）
   updateViewportHeight();
   window.game = new WatermelonGame();
+
+  // 拦截手机返回键，防止误触退出丢失进度
+  if (!window._backIntercepted) {
+    window._backIntercepted = true;
+    history.pushState({ gameActive: true }, '');
+    window.addEventListener('popstate', function() {
+      if (window.game && !window.game.gameOver && window.game.score > 0) {
+        // 游戏进行中且有分数，阻止返回，弹出确认
+        history.pushState({ gameActive: true }, '');
+        document.getElementById('exit-confirm-overlay').classList.add('show');
+      } else {
+        // 游戏未开始或已结束，允许返回
+        history.back();
+      }
+    });
+  }
+
+  // 退出确认弹窗按钮事件
+  var exitOverlay = document.getElementById('exit-confirm-overlay');
+  var continueBtn = document.getElementById('exit-continue-btn');
+  var quitBtn = document.getElementById('exit-quit-btn');
+  if (continueBtn && !continueBtn._bound) {
+    continueBtn._bound = true;
+    continueBtn.addEventListener('click', function() {
+      exitOverlay.classList.remove('show');
+    });
+  }
+  if (quitBtn && !quitBtn._bound) {
+    quitBtn._bound = true;
+    quitBtn.addEventListener('click', function() {
+      exitOverlay.classList.remove('show');
+      // 允许真正返回
+      history.back();
+    });
+  }
 }
 
 // DOM 就绪后启动
